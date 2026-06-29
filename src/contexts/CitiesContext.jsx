@@ -1,6 +1,36 @@
 import { createContext, useCallback, useEffect, useReducer } from "react";
 
-const BASE_URL = "http://localhost:9000";
+const STORAGE_KEY = "worldwise-cities";
+
+const defaultCities = [
+  {
+    cityName: "Lisbon",
+    country: "Portugal",
+    emoji: "🇵🇹",
+    date: "2027-10-31T15:59:59.138Z",
+    notes: "My favorite city so far!",
+    position: { lat: 38.727881642324164, lng: -9.140900099907554 },
+    id: 73930385,
+  },
+  {
+    cityName: "Madrid",
+    country: "Spain",
+    emoji: "🇪🇸",
+    date: "2027-07-15T08:22:53.976Z",
+    notes: "",
+    position: { lat: 40.46635901755316, lng: -3.7133789062500004 },
+    id: 17806751,
+  },
+  {
+    cityName: "Berlin",
+    country: "Germany",
+    emoji: "🇩🇪",
+    date: "2027-02-12T09:24:11.863Z",
+    notes: "Amazing 😃",
+    position: { lat: 52.53586782505711, lng: 13.376933665713324 },
+    id: 98443197,
+  },
+];
 
 const CitiesContext = createContext();
 
@@ -54,6 +84,17 @@ function reducer(state, action) {
   }
 }
 
+function loadFromStorage() {
+  const stored = localStorage.getItem(STORAGE_KEY);
+  if (stored) return JSON.parse(stored);
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(defaultCities));
+  return defaultCities;
+}
+
+function saveToStorage(cities) {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(cities));
+}
+
 function CitiesProvider({ children }) {
   const [{ cities, isLoading, currentCity, error }, dispatch] = useReducer(
     reducer,
@@ -61,32 +102,27 @@ function CitiesProvider({ children }) {
   );
 
   useEffect(function () {
-    async function fetchCities() {
-      dispatch({ type: "loading" });
-
-      try {
-        const res = await fetch(`${BASE_URL}/cities`);
-        const data = await res.json();
-        dispatch({ type: "cities/loaded", payload: data });
-      } catch {
-        dispatch({
-          type: "rejected",
-          payload: "There was an error loading cities...",
-        });
-      }
+    dispatch({ type: "loading" });
+    try {
+      const data = loadFromStorage();
+      dispatch({ type: "cities/loaded", payload: data });
+    } catch {
+      dispatch({
+        type: "rejected",
+        payload: "There was an error loading cities...",
+      });
     }
-    fetchCities();
   }, []);
+
   const getCity = useCallback(
-    async function getCity(id) {
+    function getCity(id) {
       if (Number(id) === currentCity.id) return;
 
       dispatch({ type: "loading" });
-
       try {
-        const res = await fetch(`${BASE_URL}/cities/${id}`);
-        const data = await res.json();
-        dispatch({ type: "city/loaded", payload: data });
+        const city = cities.find((c) => c.id === Number(id));
+        if (!city) throw new Error("City not found");
+        dispatch({ type: "city/loaded", payload: city });
       } catch {
         dispatch({
           type: "rejected",
@@ -94,23 +130,16 @@ function CitiesProvider({ children }) {
         });
       }
     },
-    [currentCity.id]
+    [currentCity.id, cities]
   );
 
   async function createCity(newCity) {
     dispatch({ type: "loading" });
-
     try {
-      const res = await fetch(`${BASE_URL}/cities`, {
-        method: "POST",
-        body: JSON.stringify(newCity),
-        headers: {
-          "Content-Type": "application/json",
-        },
-      });
-      const data = await res.json();
-
-      dispatch({ type: "city/created", payload: data });
+      const cityWithId = { ...newCity, id: Date.now() };
+      const updated = [...cities, cityWithId];
+      saveToStorage(updated);
+      dispatch({ type: "city/created", payload: cityWithId });
     } catch {
       dispatch({
         type: "rejected",
@@ -121,12 +150,9 @@ function CitiesProvider({ children }) {
 
   async function deleteCity(id) {
     dispatch({ type: "loading" });
-
     try {
-      await fetch(`${BASE_URL}/cities/${id}`, {
-        method: "DELETE",
-      });
-
+      const updated = cities.filter((c) => c.id !== id);
+      saveToStorage(updated);
       dispatch({ type: "city/deleted", payload: id });
     } catch {
       dispatch({
